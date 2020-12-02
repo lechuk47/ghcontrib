@@ -80,7 +80,7 @@ func (app App) queryTopUsersByLocation(ctx context.Context, location string, ite
 
 		// What if there are a burst of the same requests at a time??
 		// All requests query the API and feeds the cache
-		res, err := app.runGithubAPIRequest(location)
+		res, err := app.runGithubAPIRequest(ctx, location)
 		if err != nil {
 			return nil, err
 		} else {
@@ -107,7 +107,7 @@ func (app App) queryTopUsersByLocation(ctx context.Context, location string, ite
 // This function controls the concurrent invocations to the Github Search Api
 // Github has a rate limit of 30 requests per minute so we limit the channel to 30
 // If there are no positions left, the function returns an error to the user
-func (app App) runGithubAPIRequest(location string) ([]*github.User, error) {
+func (app App) runGithubAPIRequest(ctx context.Context, location string) ([]*github.User, error) {
 	logrus.Info("Getting data from github api")
 
 	select {
@@ -126,7 +126,7 @@ func (app App) runGithubAPIRequest(location string) ([]*github.User, error) {
 			wg.Done()
 			<-app.ghworkers
 		}()
-		res, err = app.ghClient.GetUsersByLocation(location)
+		res, err = app.ghClient.GetUsersByLocation(ctx, location)
 	}(location)
 
 	wg.Wait()

@@ -3,7 +3,6 @@ package githubclient
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -33,9 +32,53 @@ func NewClient(ctx context.Context, token string) *Client {
 	}
 }
 
-//func getUserByLogin(login string) *github.User
+func (gh *Client) githubUserWorker(ctx context.Context, queue <-chan string, results chan<- *github.User, wg *sync.WaitGroup) {
+	defer wg.Done()
+	logrus.Debug("Spawning githubUserWorker")
+	for user := range queue {
+		logrus.WithFields(logrus.Fields{
+			"user": user,
+		}).Debug("Getting github user")
+		userDetails, resp, _ := gh.clientRest.Users.Get(ctx, user)
+		logrus.WithFields(logrus.Fields{
+			"Limit":     resp.Rate.Limit,
+			"Remaining": resp.Rate.Remaining,
+			"Reset":     resp.Rate.Reset,
+		}).Debug("Github Rate")
+		results <- userDetails
+	}
+}
 
-func (gh *Client) GetUsersByLocation(location string) ([]*github.User, error) {
+func (gh *Client) getUserDetails(ctx context.Context, users []*github.User) ([]*github.User, error) {
+	// Got a bunch of users
+	var queue = make(chan string, 10)
+	var results = make(chan *github.User, len(users))
+	var wg sync.WaitGroup
+	// Spin up the workers
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go gh.githubUserWorker(ctx, queue, results, &wg)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+		logrus.Debug("All githubUserWorkers finished")
+	}()
+
+	for _, u := range users {
+		queue <- *(u).Login
+	}
+	close(queue)
+	var _users []*github.User
+	for user := range results {
+		_users = append(users, user)
+	}
+	return _users, nil
+}
+
+func (gh *Client) GetUsersByLocation(ctx context.Context, location string) ([]*github.User, error) {
 	// Check if we must wait until Reset
 	if gh.Reset != nil {
 		now := time.Now()
@@ -66,40 +109,16 @@ func (gh *Client) GetUsersByLocation(location string) ([]*github.User, error) {
 		"rateLimit": resp.Rate,
 	}).Debug("Query response")
 	if len(result.Users) > 0 {
-
 		logrus.WithFields(logrus.Fields{
 			"users": len(result.Users),
 		}).Debug("Users found")
 
-		sem := make(chan bool, 10)
-		var wg sync.WaitGroup
-		var mu = &sync.Mutex{}
-		for _, u := range result.Users {
-			login := *(u).Login
-			wg.Add(1)
-			sem <- true
-			//logrus.Debug("Spawning Users get go Routine")
-			go func(login string) {
-				defer func() {
-					//		logrus.Debug("Ending Users get go Routine")
-					<-sem
-					wg.Done()
-				}()
-				user, _, err := gh.clientRest.Users.Get(gh.ctx, login)
-				if err != nil {
-					logrus.Error(err)
-				}
-				mu.Lock()
-				users = append(users, user)
-				mu.Unlock()
-			}(login)
+		logrus.Debug("BEFORE")
+		users, err = gh.getUserDetails(ctx, result.Users)
+		logrus.Debug("AFTER")
+		if err != nil {
+			return nil, err
 		}
-		wg.Wait()
 	}
-	fmt.Println(users)
-	//Sort users by public_repos
-	sort.SliceStable(users, func(i, j int) bool {
-		return *(users)[i].PublicRepos > *(users)[j].PublicRepos
-	})
 	return users, nil
 }
