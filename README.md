@@ -37,5 +37,5 @@ Lambda supports blue/green and canary deployments. To deploy a new version, a go
 ![Rollout](docs/Rollout.jpg)
 
 # Other Considerations
- * I used this arquitecture becase I think the serverless approach of AWS really fits very well for system requirements. Other ways with a more cloud agnostic components could be defined for this system, such as deploy the docker image into any kubernetes cluster.
+ * I used this arquitecture becase I think the serverless approach of AWS really fits very well for system requirements. Other ways with a more cloud agnostic components could be defined for this system, such as deploy the docker image into any kubernetes cluster. The strategies described, could be implemented with other stacks also.
  * The caching strategy described could be improved with other cache systems. Caching user details on Redis (or other key-value storages) will save a lot of api requests to Github
