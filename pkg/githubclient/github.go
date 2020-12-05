@@ -178,7 +178,7 @@ func (gh *Client) getUsersDispatcher(ctx context.Context, users []*github.User) 
 	}
 }
 
-//Function runned as a goroutine concurrently to get the user details (number of repos)
+//Function runs as a goroutine concurrently to get the user details (number of repos)
 //Sincronization is made with channels
 func (gh *Client) getUsersWorker(ctx context.Context, queue <-chan string, results chan *github.User, errors chan<- error, wg *sync.WaitGroup) {
 	defer func() { logrus.Debug("getUsersWorker finished"); wg.Done() }()
