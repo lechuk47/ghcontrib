@@ -1,5 +1,5 @@
 # Description
-The application provided is a REST API that exposes a `/top` endpoint to get the users with most contributions by the provided location. This code is a proof of concept, the real deployment might need some code modifications that I cover in the deployment section.
+GHContrib is a REST API that exposes a `/top` endpoint to get the top contributors in Github filtered by a location. This code is a proof of concept, the real deployment might need some code modifications that I cover in the deployment section.
 
 ## Software needed to build the test
  * docker 19.03.x
@@ -10,7 +10,6 @@ To build the container image and run the application, just run `docker-compose u
 
 ```bash
 # curl http://localhost:10000/top/<location>[?items=N]
-
 curl http://localhost:10000/top/Barcelona?items=5
 ```
 
@@ -19,7 +18,7 @@ A ServerLess approach fits the project requirements and have a lot of flexibilit
 
 ![Deployment](docs/Deployment.png)
 
-Aws Lambda functions provide high avilability across multiple availability zones with automatic fail-over. The are able to manage up to 1000 concurrent invocations for a single region deployment, this quota can be increased if needed. If the system needs more capacity, it cap be deployed across multiple regions. A Multi region deployment has some advantages, such as better user experience and increased system resiliency but it adds some complexity to the system deployment and management.
+Aws Lambda functions provide high avilability across multiple availability zones with automatic fail-over. They are able to manage up to 1000 concurrent invocations for a single region deployment. This quota can be increased if needed. If the system needs more capacity, it can be deployed across multiple regions. A Multi region deployment has some advantages, such as better user experience and increased system resiliency but it adds some complexity to the system deployment and management.
 
 Api Gateway (ApiGw) acts as a frontend for the lambda function, it defines the API Specification and have some useful features for the service such as caching reponses, authorization, api versioning and more. For the service exposed here that has a strong Rate limitations, the cache will increase the throughput and performance of our system a lot, as we can cache system responses and serve them from the cache during the TTL of the cached responses.
 
