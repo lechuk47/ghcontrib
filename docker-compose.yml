@@ -7,8 +7,4 @@ services:
     image: ghcontrib:0.0.1
     ports:
       - "10000:10000"
-    command: ./ghcontrib --cache_addr redis:6379 --github_token ${GITHUB_TOKEN}
-
-
-  redis:
-    image: "redis"
+    command: ./ghcontrib --github_token ${GITHUB_TOKEN}

@@ -21,16 +21,12 @@ import (
 	"os"
 
 	"github.com/jpiriz/ghcontrib/internal"
-	"github.com/jpiriz/ghcontrib/pkg/cache"
 	"github.com/jpiriz/ghcontrib/pkg/githubclient"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 var githubToken string
-var cacheAddr string
-var cacheDb int
-var cachePassword string
 var listenAddr string
 var verbose bool
 
@@ -52,11 +48,10 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		logrus.Info("Starting GH-Contrib API")
+		logrus.Info("GH-Contrib API Started")
 		var ctx = context.Background()
-		cache := cache.NewRedisCache(cacheAddr, cacheDb, cachePassword)
 		ghClient := githubclient.NewClient(ctx, githubToken)
-		app := internal.NewApp(listenAddr, cache, ghClient)
+		app := internal.NewApp(listenAddr, ghClient)
 		//app := internal.NewApp(listenAddr, githubToken)
 		app.StartServer()
 	},
@@ -74,10 +69,5 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&githubToken, "github_token", "", "Token for Github Api")
 	rootCmd.PersistentFlags().StringVar(&listenAddr, "listen_addr", ":10000", "Token for Github Api")
-	rootCmd.PersistentFlags().StringVar(&cacheAddr, "cache_addr", "localhost:6379", "Cache Host:Port to connect to")
-	rootCmd.PersistentFlags().IntVar(&cacheDb, "cache_db", 0, "Cache Port to connect to")
-	rootCmd.PersistentFlags().StringVar(&cachePassword, "cache_password", "", "Cache password")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "show debug information")
-
-	rootCmd.MarkPersistentFlagRequired("github_token")
 }

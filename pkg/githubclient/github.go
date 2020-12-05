@@ -2,7 +2,9 @@ package githubclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -13,18 +15,27 @@ import (
 
 //Client is a struct to hold the Client
 type Client struct {
-	ctx        context.Context
-	clientRest *github.Client
-	Reset      *github.Timestamp
+	ctx            context.Context
+	clientRest     *github.Client
+	rateLimitError *github.RateLimitError
+	rateLimitMutex sync.Mutex
 }
 
 //NewClient returns a github client
 func NewClient(ctx context.Context, token string) *Client {
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	o2client := oauth2.NewClient(ctx, ts)
-	clientRest := github.NewClient(o2client)
+
+	var clientRest *github.Client
+
+	if token != "" {
+		ts := oauth2.StaticTokenSource(
+			&oauth2.Token{AccessToken: token},
+		)
+		auth := oauth2.NewClient(ctx, ts)
+		clientRest = github.NewClient(auth)
+	} else {
+		clientRest = github.NewClient(nil)
+
+	}
 
 	return &Client{
 		ctx:        ctx,
@@ -32,93 +43,178 @@ func NewClient(ctx context.Context, token string) *Client {
 	}
 }
 
-func (gh *Client) githubUserWorker(ctx context.Context, queue <-chan string, results chan<- *github.User, wg *sync.WaitGroup) {
-	defer wg.Done()
-	logrus.Debug("Spawning githubUserWorker")
-	for user := range queue {
-		logrus.WithFields(logrus.Fields{
-			"user": user,
-		}).Debug("Getting github user")
-		userDetails, resp, _ := gh.clientRest.Users.Get(ctx, user)
-		logrus.WithFields(logrus.Fields{
-			"Limit":     resp.Rate.Limit,
-			"Remaining": resp.Rate.Remaining,
-			"Reset":     resp.Rate.Reset,
-		}).Debug("Github Rate")
-		results <- userDetails
-	}
-}
-
-func (gh *Client) getUserDetails(ctx context.Context, users []*github.User) ([]*github.User, error) {
-	// Got a bunch of users
-	var queue = make(chan string, 10)
-	var results = make(chan *github.User, len(users))
-	var wg sync.WaitGroup
-	// Spin up the workers
-
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go gh.githubUserWorker(ctx, queue, results, &wg)
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-		logrus.Debug("All githubUserWorkers finished")
-	}()
-
-	for _, u := range users {
-		queue <- *(u).Login
-	}
-	close(queue)
-	var _users []*github.User
-	for user := range results {
-		_users = append(users, user)
-	}
-	return _users, nil
-}
-
-func (gh *Client) GetUsersByLocation(ctx context.Context, location string) ([]*github.User, error) {
-	// Check if we must wait until Reset
-	if gh.Reset != nil {
+//Checks if a Github API RateLimit is Active
+func (gh *Client) checkRateLimit() bool {
+	if gh.rateLimitError != nil {
 		now := time.Now()
-		waitSecs := gh.Reset.Sub(now).Seconds()
-		if waitSecs < 0 {
-			gh.Reset = nil
-		} else {
-			return nil, fmt.Errorf("RateLimitExceded; Try again in %d Seconds", int(waitSecs))
+		waitSecs := gh.rateLimitError.Rate.Reset.Sub(now).Seconds()
+		if waitSecs > 0 {
+			return true
 		}
-
 	}
+	return false
+}
+
+//Sets a current RateLimit or disables it by setting Nul
+//Ratelimit is enebled when the api returns it
+//Every Request checks wether a rateLimit is active and current
+//If the RateLimit is expired is removed setting it to nil
+func (gh *Client) setRateLimit(err *github.RateLimitError) {
+	gh.rateLimitMutex.Lock()
+	gh.rateLimitError = err
+	gh.rateLimitMutex.Unlock()
+}
+
+//GetUsersByLocation performs a Search API request to find all users by the paramter location
+//Then runs the getUserDispatcher function to get all user details concurrently
+func (gh *Client) GetUsersByLocation(ctx context.Context, location string, items int) ([]*github.User, error) {
+	// Control Rate Limit
+	if ok := gh.checkRateLimit(); ok {
+		logrus.Debug("RateLimitError Set, Discarting API Requests until RateLimit expiration")
+		logrus.Error(gh.rateLimitError)
+		return nil, gh.rateLimitError
+	} else {
+		gh.setRateLimit(nil)
+	}
+
 	var users []*github.User
 
-	opts := &github.SearchOptions{ListOptions: github.ListOptions{Page: 1, PerPage: 100}, Sort: "repos"}
+	opts := &github.SearchOptions{ListOptions: github.ListOptions{Page: 1, PerPage: items}, Sort: "repos"}
 	q := fmt.Sprintf("location:%s type:user", location)
 
+	logrus.Debug("Invoking Github Search API")
 	result, resp, err := gh.clientRest.Search.Users(gh.ctx, q, opts)
 	if _, ok := err.(*github.RateLimitError); ok {
-		gh.Reset = &resp.Rate.Reset
+		logrus.Error(err)
+		gh.setRateLimit(err.(*github.RateLimitError))
 		return nil, err
 	} else if err != nil {
+		logrus.Error(err)
 		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"pages":     resp.LastPage,
-		"nextPage":  resp.NextPage,
-		"rateLimit": resp.Rate,
-	}).Debug("Query response")
-	if len(result.Users) > 0 {
-		logrus.WithFields(logrus.Fields{
-			"users": len(result.Users),
-		}).Debug("Users found")
+		"pages":         resp.LastPage,
+		"nextPage":      resp.NextPage,
+		"returnedUsers": len(result.Users),
+		"location":      location,
+		"Limit":         resp.Rate.Limit,
+		"Remaining":     resp.Rate.Remaining,
+		"Reset":         resp.Rate.Reset,
+	}).Debug("Github Search API Response")
 
-		logrus.Debug("BEFORE")
-		users, err = gh.getUserDetails(ctx, result.Users)
-		logrus.Debug("AFTER")
-		if err != nil {
+	if len(result.Users) > 0 {
+		users, err = gh.getUsersDispatcher(ctx, result.Users)
+		if _, ok := err.(*github.RateLimitError); ok {
+			logrus.Error(err)
+			gh.setRateLimit(err.(*github.RateLimitError))
+			return nil, err
+		} else if err != nil {
 			return nil, err
 		}
 	}
+	if len(users) > 0 {
+		sort.SliceStable(users, func(i, j int) bool {
+			return *(users)[i].PublicRepos > *(users)[j].PublicRepos
+		})
+	}
+
 	return users, nil
+}
+
+//Manages the logic of the getUserWorkers and returns the final result slice with all the user details.
+func (gh *Client) getUsersDispatcher(ctx context.Context, users []*github.User) ([]*github.User, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errors.New("getUsersDispatcher Context canceled")
+	default:
+		var queue = make(chan string)
+		var errors = make(chan error, 1)
+		var done = make(chan bool, 1)
+		var results = make(chan *github.User)
+		var wg sync.WaitGroup
+
+		// Ctx withCancel to cancel goroutines if needed
+		ctx, cancel := context.WithCancel(ctx)
+
+		// Launch some workers
+		// Be careful with RateLimit
+		for i := 0; i < 3; i++ {
+			wg.Add(1)
+			go gh.getUsersWorker(ctx, queue, results, errors, &wg)
+		}
+
+		// Enqueue users to get the details on the queue channel
+		go func() {
+			for _, u := range users {
+				logrus.WithFields(logrus.Fields{
+					"user": *(u).Login,
+				}).Debug("getUsersDispatcher Send user to process queue")
+				queue <- *(u).Login
+			}
+			close(queue)
+			wg.Wait()
+			// Send a bool the the done channel to notify all work is done
+			done <- true
+		}()
+
+		// Get the results or error from a the goroutines
+		var users []*github.User
+		for {
+			select {
+			case <-done:
+				cancel()
+				return users, nil
+			case e := <-errors:
+				// If a goroutine returns an error cancel the context and return the error retourned
+				// A retry might be issued here depending on the error
+				cancel()
+				return nil, e
+			case r := <-results:
+				// Add a result to the results slice
+				users = append(users, r)
+			}
+		}
+	}
+}
+
+//Function runned as a goroutine concurrently to get the user details (number of repos)
+//Sincronization is made with channels
+func (gh *Client) getUsersWorker(ctx context.Context, queue <-chan string, results chan *github.User, errors chan<- error, wg *sync.WaitGroup) {
+	defer func() { logrus.Debug("getUsersWorker finished"); wg.Done() }()
+	for {
+		select {
+		case <-ctx.Done():
+			logrus.Debug("getUsersWorker Context canceled")
+			//	case <-errors:
+			//		logrus.Debug("getUsersWorker Error received, terminating")
+			//		return
+		case user, ok := <-queue:
+			if !ok {
+				logrus.Debug("getUsersWorker queue channel closed, terminating")
+				return
+			}
+			logrus.WithFields(logrus.Fields{
+				"user": user,
+			}).Debug("getUsersWorker Invoking Github Users API")
+			userDetails, resp, err := gh.clientRest.Users.Get(ctx, user)
+			if err != nil {
+				logrus.Error(err)
+				// This will trigger Cancel in the dispatcher
+				errors <- err
+			}
+			select {
+			case <-ctx.Done():
+				logrus.Debug("getUsersWorker Context canceled")
+				return
+			default:
+				logrus.WithFields(logrus.Fields{
+					"Limit":     resp.Rate.Limit,
+					"Remaining": resp.Rate.Remaining,
+					"Reset":     resp.Rate.Reset,
+				}).Debug("getUsersWorker Github RateLimit")
+				results <- userDetails
+			}
+		}
+	}
 }
