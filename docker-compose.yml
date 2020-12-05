@@ -7,4 +7,5 @@ services:
     image: ghcontrib:0.0.1
     ports:
       - "10000:10000"
-    command: ./ghcontrib
+    command: ./ghcontrib --verbose
+    #command: ./ghcontrib --verbose --github_token=${GITHUB_TOKEN}

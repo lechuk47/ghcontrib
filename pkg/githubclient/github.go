@@ -139,7 +139,7 @@ func (gh *Client) getUsersDispatcher(ctx context.Context, users []*github.User) 
 
 		// Launch some workers
 		// Be careful with RateLimit
-		for i := 0; i < 3; i++ {
+		for i := 0; i < 5; i++ {
 			wg.Add(1)
 			go gh.getUsersWorker(ctx, queue, results, errors, &wg)
 		}
@@ -167,7 +167,6 @@ func (gh *Client) getUsersDispatcher(ctx context.Context, users []*github.User) 
 				return users, nil
 			case e := <-errors:
 				// If a goroutine returns an error cancel the context and return the error retourned
-				// A retry might be issued here depending on the error
 				cancel()
 				return nil, e
 			case r := <-results:
@@ -198,6 +197,7 @@ func (gh *Client) getUsersWorker(ctx context.Context, queue <-chan string, resul
 			if err != nil {
 				logrus.Error(err)
 				// This will trigger Cancel in the dispatcher
+				// A Retry could be issued here depending on the error returned
 				errors <- err
 			}
 			select {
