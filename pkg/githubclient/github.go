@@ -186,9 +186,6 @@ func (gh *Client) getUsersWorker(ctx context.Context, queue <-chan string, resul
 		select {
 		case <-ctx.Done():
 			logrus.Debug("getUsersWorker Context canceled")
-			//	case <-errors:
-			//		logrus.Debug("getUsersWorker Error received, terminating")
-			//		return
 		case user, ok := <-queue:
 			if !ok {
 				logrus.Debug("getUsersWorker queue channel closed, terminating")
