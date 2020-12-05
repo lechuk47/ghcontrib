@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/google/go-github/v32/github"
 	"github.com/gorilla/mux"
+	"github.com/jpiriz/ghcontrib/pkg/cache"
 	"github.com/jpiriz/ghcontrib/pkg/githubclient"
 	"github.com/sirupsen/logrus"
 )
@@ -16,13 +17,15 @@ import (
 type App struct {
 	listenAddr string
 	ghClient   *githubclient.Client
-	rqMutex    *sync.Mutex
+	cache      cache.Cache
 }
 
-func NewApp(listenAddr string, ghClient *githubclient.Client) App {
+//NewApp returns a App
+func NewApp(listenAddr string, ghClient *githubclient.Client, cache cache.Cache) App {
 	return App{
 		listenAddr: listenAddr,
 		ghClient:   ghClient,
+		cache:      cache,
 	}
 }
 
@@ -61,14 +64,52 @@ func (app *App) topContributorsHandler(w http.ResponseWriter, r *http.Request) {
 			items = 100
 		}
 
-		users := make([]*github.User, 0)
-		if users, err = app.ghClient.GetUsersByLocation(ctx, location, items); err != nil {
-			if serr, ok := err.(*github.RateLimitError); ok {
-				http.Error(w, serr.Error(), http.StatusTooManyRequests)
-			} else {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+		var getFromAPI = false
+		var cacheError = false
+		var users = make([]*github.User, 0)
+
+		if users, err = app.cache.GetKey(ctx, location); err == nil {
+			logrus.WithField("key", location).Info("Cache Hit")
+			json.NewEncoder(w).Encode(users)
+		} else if err == redis.Nil {
+
+			logrus.WithField("key", location).Info("Cache Miss")
+			if err = app.cache.SetLock(ctx, "mutex-"+location); err != nil {
+				//Lock Set
+				defer func() {
+					logrus.Debug("Releasing Cache Lock")
+					app.cache.ReleaseLock("mutex-" + location)
+				}()
 			}
-		} else {
+			// We got the Lock, but maybe another thread has set the cache before
+			if users, err = app.cache.GetKey(ctx, location); err != nil {
+				getFromAPI = true
+				if err != redis.Nil {
+					logrus.Debug("CacheError; Disable the cache for this request")
+					logrus.Error(err)
+					cacheError = true
+				}
+			} else {
+				logrus.Debug("Data got from the cache after lock")
+			}
+
+			if getFromAPI {
+				if users, err = app.ghClient.GetUsersByLocation(ctx, location, 100); err != nil {
+					if serr, ok := err.(*github.RateLimitError); ok {
+						http.Error(w, serr.Error(), http.StatusTooManyRequests)
+					} else {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+					}
+				} else {
+					if cacheError == false {
+						logrus.Debug("Setting cache value")
+						if err := app.cache.SetKey(ctx, location, users, 300*time.Second); err != nil {
+							logrus.Error(err)
+						}
+					}
+				}
+			}
+			// Encode users
 			json.NewEncoder(w).Encode(users)
 		}
 	}

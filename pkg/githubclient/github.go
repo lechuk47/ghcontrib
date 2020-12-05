@@ -23,9 +23,7 @@ type Client struct {
 
 //NewClient returns a github client
 func NewClient(ctx context.Context, token string) *Client {
-
 	var clientRest *github.Client
-
 	if token != "" {
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: token},
@@ -77,8 +75,7 @@ func (gh *Client) GetUsersByLocation(ctx context.Context, location string, items
 		gh.setRateLimit(nil)
 	}
 
-	var users []*github.User
-
+	var users = make([]*github.User, 0)
 	opts := &github.SearchOptions{ListOptions: github.ListOptions{Page: 1, PerPage: items}, Sort: "repos"}
 	q := fmt.Sprintf("location:%s type:user", location)
 
