@@ -18,22 +18,28 @@ A ServerLess approach fits the project requirements and have a lot of flexibilit
 
 ![Deployment](docs/Deployment.png)
 
-Aws Lambda functions provide high avilability across multiple availability zones with automatic fail-over. They are able to manage up to 1000 concurrent invocations for a single region deployment (Europe). If the system needs more capacity, it can be deployed across multiple regions. A Multi region deployment has some advantages, such as better user experience when it's configured to work with a CDN and a increased system resiliency as it's deployed in multiple regions. The counterpart is that the deployments and management requires more effort.
+Aws Lambda functions are a good fit for the API:
+ * Provide high avilability across multiple availability zones with automatic fail-over.
+ * They are able to manage up to 1000 concurrent invocations for a single region deployment (Europe).
+ * If the system needs more capacity, it can be deployed across multiple regions.
+   * A Multi region deployment has some advantages, such as better user experience and a increased system resiliency. The counterpart is that the deployments and management requires more effort.
 
-Api Gateway (ApiGw) acts as a frontend for the lambda function, it defines the API Specification and have some useful features for the service such as caching reponses, managing authorization, api versioning and more. The cache at this stage will save a lot of lambda invocations and will provide a better user experience.
+Api Gateway (ApiGw) acts as a frontend for the lambda function, it defines the API Specification and have some useful features such as caching reponses, managing authorization, api versioning and more. The cache at this stage will save a lot of lambda invocations and will provide a better user experience.
 
-A Redis Cache is used to store the reponses got from github API. Api gateway will cache the responses for a determined request, but if there are some requests with diferent parameters for the same location, the cache will miss. When a lambda invocation gets data from github, it stores it in Redis. Next requests for the same location will hit the Redis cache instead of getting the data from Github again.
+A Redis Cache is used to store the data got from github. Api gateway will cache the responses for a determined request, but if the succesive requests have different parameters for the same location, the cache will miss. When a lambda invocation gets data from github, it stores it in Redis. Next requests for the same location will hit the Redis cache instead of getting the data from Github again.
 
-This system has a good scalablity up to the maximum of concurrent invocations and the resources usage is dynamic. Once the limit is reached, new requests will be throttled. If the system is expected to grow to that limit, the system must be desgined with other components that support more load. As the application is dockerized, it can be deployed in a regional kubernetes cluster using the same approach.
+This system has a good scalablity up to the maximum of concurrent invocations and the resources usage is dynamic. Once the limit is reached, new requests will be throttled. If the system is expected to grow to that limit, the system must be desgined with other components to support more load. As the application is containerized, it can be deployed in a regional kubernetes cluster using the api gateway as a frontend too.
 
-Components use Cloudwatch to ingest its logs and metrics. To ensure the system is working fine there are some basic metrics that need to be monitored.
+# Observability
+All Components use Cloudwatch to ingest its logs and metrics. To ensure the system is working fine there are some basic metrics that need to be monitored.
 * **Latency and response time**: The time a client is waiting to get their request processed and the time to process the request and return back the reponse are crucial to ensure a good quality service, if the system is user facing this is also more important.
+
 * **Error rates:** Control the number of errors the service is throwing could help identify problems. There are some points where the errors should be captured.
   * ApiGw response status codes: 4xx/5xx error codes
   * Lambda invocations error count
   * Lambda logs
 * **Cache Hit Ratio:** Cache Hit Ratio should be as high as possible to ensure a good throughput.
-* **Concurrent invocations:** System capacity should be monitored to ensure the system will be able to manage request spikes and to control at wich capacity
+* **Concurrent invocations:** System capacity should be monitored to ensure the system will be able to manage request spikes and to control at wich capacity the system is working.
 
 
 # Updating the System
