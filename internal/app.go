@@ -116,8 +116,8 @@ func (app *App) topContributorsHandler(w http.ResponseWriter, r *http.Request) {
 		items, err := strconv.Atoi(r.URL.Query().Get("items"))
 		if err != nil {
 			items = 10
-		} else if items > 100 { //Hard limit the users
-			items = 100
+		} else if items > MAX_ITEMS { //Hard limit the users
+			items = MAX_ITEMS
 		}
 		var users = make([]*github.User, 0)
 

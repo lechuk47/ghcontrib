@@ -32,6 +32,7 @@ This system has a good scalablity up to the maximum of concurrent invocations an
 
 # Observability
 All Components use Cloudwatch to ingest its logs and metrics. To ensure the system is working fine there are some basic metrics that need to be monitored.
+
 * **Latency and response time**: The time a client is waiting to get their request processed and the time to process the request and return back the reponse are crucial to ensure a good quality service, if the system is user facing this is also more important.
 
 * **Error rates:** Control the number of errors the service is throwing could help identify problems. There are some points where the errors should be captured.
