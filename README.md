@@ -14,7 +14,7 @@ curl http://localhost:10000/top/Barcelona?items=5
 ```
 
 # Production Deployment
-A ServerLess approach fits the project requirements and have a lot of flexibility on the system management, deployment and costs. The following diagram shows a possible arquitecture based on AWS Api Gateway, AWS Lambda and Redis. As the github API has strong rate limits, the system is designed to do the minimum requests to Github API
+A ServerLess approach fits the project requirements and have a lot of flexibility on the system management, deployment and costs. The following diagram shows a possible arquitecture based on AWS Api Gateway, AWS Lambda and Redis. As the Github API has strong rate limits, the system is designed to do the minimum requests to it
 
 ![Deployment](docs/Deployment.png)
 
