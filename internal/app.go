@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -21,15 +20,6 @@ const (
 	MaxItems         = 100
 	KeyUsersNotFound = "NoUsersFound"
 )
-
-//Error type to control when a cache has a key with no users associated
-type LocationNotFoundError struct {
-	location string
-}
-
-func (e LocationNotFoundError) Error() string {
-	return fmt.Sprintf("No users found with %s location", e.location)
-}
 
 type App struct {
 	listenAddr  string
@@ -78,39 +68,53 @@ func (app *App) releaseCacheLock(key string) {
 	}
 }
 
+func marshalUsers(users []string) []*github.User {
+	cUsers := make([]*github.User, 0)
+	for _, u := range users {
+		var uo github.User
+		json.Unmarshal([]byte(u), &uo)
+		cUsers = append(cUsers, &uo)
+	}
+	return cUsers
+}
+
 // There is a corner case when a location has no users in github
 // In that case a key with a special value is stored to prevent issue api requests
 // for non-existent locations
-func (app App) getCacheItems(ctx context.Context, key string, items int) ([]*github.User, error) {
+func (app App) getCacheItems(ctx context.Context, key string, items int) ([]*github.User, bool, bool) {
+	cacheHit := false
+	cacheDisabled := false
 	cUsers := make([]*github.User, 0)
 	if isCached, err := app.cache.Exists(ctx, key); err != nil {
 		logrus.Debug("Error getting key from the cache")
-		return nil, err
+		cacheDisabled = true
+		//return cUsers, cacheDisabled, cacheHit
 	} else {
 		if isCached > 0 {
 			if users, err := app.cache.GetRange(ctx, key, MaxItems); err != nil {
 				if k, err := app.cache.GetKey(ctx, key); err == nil && k == KeyUsersNotFound {
 					logrus.Debug("Cache Key exists, location with no users")
-					return cUsers, LocationNotFoundError{key}
+					cacheHit = true
 				} else {
 					logrus.Debug("Error getting data from the cache")
 					logrus.Error(err)
-					return nil, err
+					cacheDisabled = true
 				}
 			} else {
-				// this could be improved
-				for _, u := range users {
-					var uo github.User
-					json.Unmarshal([]byte(u), &uo)
-					cUsers = append(cUsers, &uo)
+				if len(users) >= items {
+					logrus.WithField("key", key).Info("Cache Hit")
+					cacheHit = true
+					cUsers = marshalUsers(users)
+				} else {
+					logrus.WithField("key", key).Info("Cache Miss, not enough users in cache")
 				}
-				return cUsers, err
 			}
 		} else {
 			logrus.Debug("Key does not exist in the cache")
-			return cUsers, nil
+			cacheHit = false
 		}
 	}
+	return cUsers, cacheHit, cacheDisabled
 }
 
 // If users is empty, set a object instead of a list, getCacheItems is aware of this case
@@ -128,39 +132,13 @@ func (app App) setCacheItems(ctx context.Context, key string, users []*github.Us
 			return nil
 		}
 	} else {
-		logrus.Debug("Location jas no users, set a special cache key to control it")
+		logrus.Debug("Location has no users, set a special cache key to control it")
 		if err := app.cache.SetKey(ctx, app.cacheObjTTL, key, KeyUsersNotFound); err != nil {
 			return err
 		} else {
 			return nil
 		}
 	}
-}
-
-func (app *App) getUsersFromCache(ctx context.Context, location string, items int) ([]*github.User, bool, bool) {
-	var cacheHit bool
-	var cacheDisabled bool
-	users, err := app.getCacheItems(ctx, location, items)
-	if err != nil {
-		err, ok := err.(LocationNotFoundError)
-		if ok {
-			logrus.Debug(err)
-			logrus.WithField("key", location).Info("Cache Hit with no users")
-			cacheHit = true
-		} else {
-			logrus.Debug("Error using cache, disabling it")
-			logrus.Error(err)
-			cacheDisabled = true
-		}
-	} else {
-		if len(users) >= items {
-			logrus.WithField("key", location).Info("Cache Hit")
-			cacheHit = true
-		} else {
-			logrus.WithField("key", location).Info("Cache Miss")
-		}
-	}
-	return users, cacheHit, cacheDisabled
 }
 
 // Handler that executes the topContributors function
@@ -185,7 +163,7 @@ func (app *App) topContributorsHandler(w http.ResponseWriter, r *http.Request) {
 
 		//[1] Get Data form the cache
 		//users, err = app.getCacheItems(ctx, location, items)
-		users, cacheHit, cacheDisabled = app.getUsersFromCache(ctx, location, items)
+		users, cacheHit, cacheDisabled = app.getCacheItems(ctx, location, items)
 		if cacheHit == false {
 			// If system is under RateLimit, return
 			if ok := app.ghClient.CheckRateLimit(); ok {
@@ -204,7 +182,7 @@ func (app *App) topContributorsHandler(w http.ResponseWriter, r *http.Request) {
 
 				// Get data from the cache
 				// Another goroutine might has set the data
-				users, cacheHit, cacheDisabled = app.getUsersFromCache(ctx, location, items)
+				users, cacheHit, cacheDisabled = app.getCacheItems(ctx, location, items)
 			}
 
 			if cacheHit == false { // Get users from the Github API
@@ -224,18 +202,19 @@ func (app *App) topContributorsHandler(w http.ResponseWriter, r *http.Request) {
 					logrus.Debug("Error Setting cache value")
 				}
 			}
-
-			// Encode users
-			if len(users) > 0 {
-				sort.SliceStable(users, func(i, j int) bool {
-					return *(users)[i].PublicRepos > *(users)[j].PublicRepos
-				})
-			}
-			if items <= len(users) {
-				json.NewEncoder(w).Encode(users[:items])
-			} else {
-				json.NewEncoder(w).Encode(users)
-			}
 		}
+
+		// Encode users
+		if len(users) > 0 {
+			sort.SliceStable(users, func(i, j int) bool {
+				return *(users)[i].PublicRepos > *(users)[j].PublicRepos
+			})
+		}
+		if items <= len(users) {
+			json.NewEncoder(w).Encode(users[:items])
+		} else {
+			json.NewEncoder(w).Encode(users)
+		}
+
 	}
 }

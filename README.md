@@ -57,5 +57,3 @@ Lambda supports blue/green and canary deployments. To deploy a new version, a go
 # Other Considerations
  * I used this arquitecture becase I think the serverless approach of AWS really fits very well for system requirements. Other ways with a more cloud agnostic components could be defined for this system, such as deploy the containerized image into any kubernetes cluster. The metrics described and the deployment strategy could be the same with this other approach.
 
-
-
