@@ -1,5 +1,5 @@
 # Description
-GHContrib is a REST API that exposes a `/top` endpoint to get the top contributors in Github filtered by a location. This code is a proof of concept, the real deployment might need some code modifications that I cover in the deployment section.
+GHContrib is a REST API to get the top contributors in Github filtered by a location. This code is a proof of concept, the real deployment might need some code modifications that I cover in the deployment section.
 
 ## Software needed to build the test
  * docker 19.03.x
