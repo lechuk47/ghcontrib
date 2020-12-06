@@ -15,7 +15,7 @@ import (
 //Cache is the interface that the app has to implement to use the cache
 type Cache interface {
 	GetKey(ctx context.Context, key string) (interface{}, error)
-	SetKey(ctx context.Context, key string, value interface{}, ttl time.Duration) error
+	SetKey(ctx context.Context, ttl time.Duration, key string, value interface{}) error
 	SetLock(ctx context.Context, key string) error
 	ReleaseLock(key string) error
 	Push(ctx context.Context, ttl time.Duration, key string, values ...string) error
@@ -82,7 +82,7 @@ func (r RedisCache) ReleaseLock(key string) error {
 }
 
 //SetKey sets a key-value in Redis cache
-func (r RedisCache) SetKey(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (r RedisCache) SetKey(ctx context.Context, ttl time.Duration, key string, value interface{}) error {
 	err := r.client.Set(ctx, key, value, ttl).Err()
 	if err != nil {
 		return err

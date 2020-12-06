@@ -47,6 +47,12 @@ func TestPush(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestPushNoValues(t *testing.T) {
+	var values = []string{}
+	err := c.Push(ctx, 30*time.Second, "pushkeyNovalue", values...)
+	assert.NoError(t, err)
+}
+
 func TestGetRange(t *testing.T) {
 	values, err := c.GetRange(ctx, "pushkey", 5)
 	assert.NoError(t, err)
