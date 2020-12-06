@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -10,16 +9,18 @@ import (
 	"github.com/go-redsync/redsync/v4"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v8"
 
-	"github.com/google/go-github/v32/github"
 	"github.com/sirupsen/logrus"
 )
 
-//Cache is the interface which cache implementations must implement
+//Cache is the interface that the app has to implement to use the cache
 type Cache interface {
-	GetKey(ctx context.Context, key string) ([]*github.User, error)
-	SetKey(ctx context.Context, key string, value []*github.User, ttl time.Duration) error
+	GetKey(ctx context.Context, key string) (interface{}, error)
+	SetKey(ctx context.Context, key string, value interface{}, ttl time.Duration) error
 	SetLock(ctx context.Context, key string) error
 	ReleaseLock(key string) error
+	Push(ctx context.Context, ttl time.Duration, key string, values ...string) error
+	GetRange(ctx context.Context, key string, items int64) ([]string, error)
+	Exists(ctx context.Context, key string) (int64, error)
 }
 
 //RedisCache is the Implementation of Cache interface for Redis
@@ -42,19 +43,13 @@ func NewRedisCache(addr string, password string) RedisCache {
 	}
 }
 
-//GetKey gets a key from a redis cache
-//Returns a slice of pointers to User
-func (r RedisCache) GetKey(ctx context.Context, key string) ([]*github.User, error) {
-	users, err := r.client.Get(ctx, key).Result()
+//GetKey gets the value of a key from the cache
+func (r RedisCache) GetKey(ctx context.Context, key string) (interface{}, error) {
+	value, err := r.client.Get(ctx, key).Result()
 	if err != nil {
-		logrus.Error(err)
 		return nil, err
 	} else {
-		var cUsers = make([]*github.User, 0)
-		if users != "null" {
-			err = json.Unmarshal([]byte(users), &cUsers)
-		}
-		return cUsers, err
+		return value, nil
 	}
 }
 
@@ -70,6 +65,7 @@ func (r RedisCache) SetLock(ctx context.Context, key string) error {
 			logrus.Error(err)
 			return err
 		} else {
+			logrus.Debug("Returning Nil")
 			return nil
 		}
 	}
@@ -86,14 +82,58 @@ func (r RedisCache) ReleaseLock(key string) error {
 }
 
 //SetKey sets a key-value in Redis cache
-func (r RedisCache) SetKey(ctx context.Context, key string, users []*github.User, ttl time.Duration) error {
-	susers, err := json.Marshal(users)
-	if err != nil {
-		return err
-	}
-	err = r.client.Set(ctx, key, string(susers), ttl).Err()
+func (r RedisCache) SetKey(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	err := r.client.Set(ctx, key, value, ttl).Err()
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+//Push push values to a redis list
+func (r RedisCache) Push(ctx context.Context, ttl time.Duration, key string, values ...string) error {
+	_ = r.client.Del(ctx, key)
+	if val, err := r.client.LPush(ctx, key, values).Result(); err != nil {
+		return err
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"insertedItems": val,
+		}).Debug("Pushing to the cache")
+	}
+
+	if _, err := r.client.Expire(ctx, key, ttl).Result(); err != nil {
+		return err
+	}
+	return nil
+}
+
+//GetRange gets a range of values from redis
+func (r RedisCache) GetRange(ctx context.Context, key string, items int64) ([]string, error) {
+	value, err := r.client.LRange(ctx, key, 0, items).Result()
+	logrus.WithFields(logrus.Fields{
+		"key":   key,
+		"start": 1,
+		"stop":  items,
+		"got":   len(value),
+	}).Debug("GetRange")
+
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+//Exists check if a key exists in redis
+func (r RedisCache) Exists(ctx context.Context, key string) (int64, error) {
+	value, err := r.client.Exists(ctx, key).Result()
+	logrus.WithFields(logrus.Fields{
+		"key":   key,
+		"value": value,
+	}).Debug("Checking if key exists in the cache")
+	if err != nil {
+		logrus.Debug(err)
+		return 0, err
+	} else {
+		return value, err
+	}
 }

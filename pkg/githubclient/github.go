@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -81,6 +80,7 @@ func (gh *Client) GetUsersByLocation(ctx context.Context, location string, items
 
 	logrus.Debug("Invoking Github Search API")
 	result, resp, err := gh.clientRest.Search.Users(gh.ctx, q, opts)
+
 	if _, ok := err.(*github.RateLimitError); ok {
 		logrus.Error(err)
 		gh.setRateLimit(err.(*github.RateLimitError))
@@ -110,12 +110,6 @@ func (gh *Client) GetUsersByLocation(ctx context.Context, location string, items
 			return nil, err
 		}
 	}
-	if len(users) > 0 {
-		sort.SliceStable(users, func(i, j int) bool {
-			return *(users)[i].PublicRepos > *(users)[j].PublicRepos
-		})
-	}
-
 	return users, nil
 }
 
