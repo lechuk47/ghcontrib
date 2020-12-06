@@ -137,6 +137,13 @@ func (app *App) topContributorsHandler(w http.ResponseWriter, r *http.Request) {
 				cacheHit = true
 			}
 		}
+
+		if ok := app.ghClient.CheckRateLimit(); ok {
+			logrus.Debug("RateLimitError Set, Discarting API Requests until RateLimit expiration")
+			logrus.Error(app.ghClient.GetRateLimitError())
+			http.Error(w, app.ghClient.GetRateLimitError().Error(), http.StatusTooManyRequests)
+			return
+		}
 		//[2] If cache is Alive and we need to get data from Github:
 		//    Get a cache lock to prevent other tasks to get the same data
 		//    After get the lock, check the cache again

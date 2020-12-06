@@ -41,7 +41,7 @@ func NewClient(ctx context.Context, token string) *Client {
 }
 
 //Checks if a Github API RateLimit is Active
-func (gh *Client) checkRateLimit() bool {
+func (gh *Client) CheckRateLimit() bool {
 	if gh.rateLimitError != nil {
 		now := time.Now()
 		waitSecs := gh.rateLimitError.Rate.Reset.Sub(now).Seconds()
@@ -62,11 +62,16 @@ func (gh *Client) setRateLimit(err *github.RateLimitError) {
 	gh.rateLimitMutex.Unlock()
 }
 
+//GetRateLimitError Returns the Rate limit error
+func (gh Client) GetRateLimitError() error {
+	return gh.rateLimitError
+}
+
 //GetUsersByLocation performs a Search API request to find all users by the paramter location
 //Then runs the getUserDispatcher function to get all user details concurrently
 func (gh *Client) GetUsersByLocation(ctx context.Context, location string, items int) ([]*github.User, error) {
 	// Control Rate Limit
-	if ok := gh.checkRateLimit(); ok {
+	if ok := gh.CheckRateLimit(); ok {
 		logrus.Debug("RateLimitError Set, Discarting API Requests until RateLimit expiration")
 		logrus.Error(gh.rateLimitError)
 		return nil, gh.rateLimitError
