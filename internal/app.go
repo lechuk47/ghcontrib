@@ -120,60 +120,78 @@ func (app *App) topContributorsHandler(w http.ResponseWriter, r *http.Request) {
 			items = MAX_ITEMS
 		}
 		var users = make([]*github.User, 0)
+		cacheDisabled := false
+		cacheHit := false
+		fetchFromGithub := false
 
+		//[1] Get Data form the cache
 		users, err = app.getCacheItems(ctx, location, items)
 		if err != nil {
-			logrus.Debug("Error using the cache")
+			logrus.Debug("Error using the cache; disabling cache usage")
 			logrus.Error(err)
-		}
-		if len(users) >= items {
-			logrus.WithField("key", location).Info("Cache Hit")
+			cacheDisabled = true
+			fetchFromGithub = true
 		} else {
+			if len(users) >= items {
+				logrus.WithField("key", location).Info("Cache Hit")
+				cacheHit = true
+			}
+		}
+		//[2] If cache is Alive and we need to get data from Github:
+		//    Get a cache lock to prevent other tasks to get the same data
+		//    After get the lock, check the cache again
+		if cacheDisabled == false && cacheHit == false {
 			logrus.Debug("Cache Miss, Getting from the API")
 			// Set Cache Distributed Lock
 			if err = app.cache.SetLock(ctx, "mutex-"+location); err == nil {
 				logrus.Debug("Cache Distributed lock acquired")
 				defer app.releaseCacheLock("mutex-" + location)
-
 				// We got the Lock, but maybe another thread has set the cache while this
 				// Thread was waiting
 				users, err = app.getCacheItems(ctx, location, items)
 				if err != nil {
 					logrus.Debug("Error using the cache")
 					logrus.Error(err)
-				}
-				if len(users) >= items {
-					logrus.WithField("key", location).Info("Cache Hit")
+					cacheDisabled = true
+					fetchFromGithub = true
 				} else {
-					// Get users from the Github API
-					if users, err = app.ghClient.GetUsersByLocation(ctx, location, items); err != nil {
-						if serr, ok := err.(*github.RateLimitError); ok {
-							http.Error(w, serr.Error(), http.StatusTooManyRequests)
-						} else {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-						}
-						return
+					if len(users) >= items {
+						logrus.WithField("key", location).Info("Cache Hit")
 					} else {
-						logrus.Debug("Setting cache value")
-						if err = app.setCache(ctx, location, users); err != nil {
-							logrus.Debug("Error Setting cache value")
-						}
+						fetchFromGithub = true
 					}
 				}
 			} else {
-				// Cache distributed lock has a timeout
-				// Check the cache if the routine could not get the lock
-				// Maybe another goroutine has set the cache
 				users, err = app.getCacheItems(ctx, location, items)
 				if err != nil {
 					logrus.Debug("Error using the cache")
 					logrus.Error(err)
-				} else if len(users) >= items {
-					logrus.WithField("key", location).Info("Cache Hit After waiting to cache lock")
+				} else {
+					if len(users) >= items {
+						logrus.WithField("key", location).Info("Cache Hit After waiting to cache lock")
+					}
 				}
-
 			}
 		}
+
+		if fetchFromGithub == true { // Get users from the Github API
+			if users, err = app.ghClient.GetUsersByLocation(ctx, location, items); err != nil {
+				if serr, ok := err.(*github.RateLimitError); ok {
+					http.Error(w, serr.Error(), http.StatusTooManyRequests)
+				} else {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+				return
+			}
+		}
+
+		if cacheDisabled == false && cacheHit == false {
+			logrus.Debug("Setting cache value")
+			if err = app.setCache(ctx, location, users); err != nil {
+				logrus.Debug("Error Setting cache value")
+			}
+		}
+
 		// Encode users
 		if len(users) > 0 {
 			sort.SliceStable(users, func(i, j int) bool {
@@ -182,6 +200,10 @@ func (app *App) topContributorsHandler(w http.ResponseWriter, r *http.Request) {
 		} else {
 			logrus.Debug("Returning no users")
 		}
-		json.NewEncoder(w).Encode(users[:items])
+		if items <= len(users) {
+			json.NewEncoder(w).Encode(users[:items])
+		} else {
+			json.NewEncoder(w).Encode(users)
+		}
 	}
 }

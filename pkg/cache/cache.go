@@ -101,6 +101,7 @@ func (r RedisCache) Push(ctx context.Context, ttl time.Duration, key string, val
 		}).Debug("Pushing to the cache")
 	}
 
+	logrus.WithField("expiration", ttl).Debug("Setting key expiration")
 	if _, err := r.client.Expire(ctx, key, ttl).Result(); err != nil {
 		return err
 	}
