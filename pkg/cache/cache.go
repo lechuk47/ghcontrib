@@ -132,7 +132,7 @@ func (r RedisCache) Exists(ctx context.Context, key string) (int64, error) {
 		"value": value,
 	}).Debug("Checking if key exists in the cache")
 	if err != nil {
-		logrus.Debug(err)
+		logrus.Error(err)
 		return 0, err
 	} else {
 		return value, err
