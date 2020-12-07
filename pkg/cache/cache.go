@@ -65,7 +65,7 @@ func (r RedisCache) SetLock(ctx context.Context, key string) error {
 			logrus.Error(err)
 			return err
 		} else {
-			logrus.Debug("Returning Nil")
+			logrus.Debug("Redis Mute Lock acquired")
 			return nil
 		}
 	}
