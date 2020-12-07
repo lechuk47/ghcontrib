@@ -1,5 +1,5 @@
 # Description
-GHContrib is a REST API to get the top contributors in Github filtered by a location. This code is a proof of concept, the real deployment might need some code modifications that I cover in the deployment section.
+GHContrib is a REST API to get the top contributors in Github filtered by location. This code is a proof of concept, the real deployment might need some code modifications that I cover in the deployment section.
 
 ## Software needed to build the test
  * docker 19.03.x
@@ -14,17 +14,17 @@ curl http://localhost:10000/top/Barcelona?items=5
 ```
 
 # Production Deployment
-A ServerLess approach fits the project requirements and have a lot of flexibility on the system management, deployment and costs. The following diagram shows a possible arquitecture based on AWS Api Gateway, AWS Lambda and Redis. As the Github API has strong rate limits, the system is designed to do the minimum requests to it
+A ServerLess approach fits the project requirements and have a lot of flexibility on the system management, deployment and costs. The following diagram shows a possible architecture based on AWS Api Gateway, AWS Lambda and Redis. As the Github API has strong rate limits, the system is designed to do the minimum requests to it
 
 ![Deployment](docs/Deployment.png)
 
 Aws Lambda functions are a good fit for the API:
- * Provide high avilability across multiple availability zones with automatic fail-over.
+ * Provide high availability across multiple availability zones with automatic fail-over.
  * They are able to manage up to 1000 concurrent invocations for a single region deployment (Europe).
  * If the system needs more capacity, it can be deployed across multiple regions.
-   * A Multi region deployment has some advantages, such as better user experience and a increased system resiliency. The counterpart is that the deployments and management requires more effort.
+   * A Multi region deployment has some advantages, such as better user experience and an increased system resiliency. The counterpart is that the deployments and management requires more effort.
 
-Api Gateway (ApiGw) acts as a frontend for the lambda function, it defines the API Specification and have some useful features such as caching reponses, managing authorization, api versioning and more. The cache at this stage will save a lot of lambda invocations and will provide a better user experience.
+Api Gateway (ApiGw) acts as a frontend for the lambda function, it defines the API Specification and have some useful features such as caching reponses, rate limiting, managing authorization, api versioning and more. The cache at this stage will save a lot of lambda invocations and will provide a better user experience. ApiGw rate limiting might be configured as well to ensure github rate limits are not reached.
 
 A Redis Cache is used to store the data got from github. Api gateway will cache the responses for a determined request, but if the succesive requests have different parameters for the same location, the cache will miss. When a lambda invocation gets data from github, it stores it in Redis. Next requests for the same location will hit the Redis cache instead of getting the data from Github again. If Redis is not available the system will work fetching all the requests from the api
 
@@ -37,7 +37,7 @@ All Components use Cloudwatch to ingest its logs and metrics. To ensure the syst
 
 * **Concurrent invocations:** System capacity should be monitored to ensure the system will be able to manage request spikes and to control at wich capacity the system is working.
 
-* **Error rates:** Control the number of errors the service is throwing could help identify problems. There are some points where the errors should be captured.
+* **Error rates:** Control the number of errors the service is throwing could help to identify problems. There are some points where the errors should be captured.
   * ApiGw response status codes: 4xx/5xx error codes
   * Lambda invocations error count
   * Lambda logs
@@ -50,7 +50,7 @@ Lambda supports blue/green and canary deployments. To deploy a new version, a go
 
 ![Rollout](docs/Rollout.jpg)
 
-Switching to new version can be done at different paces to ensure the new software is behaving fine. Doing a rollback to the previous version can be done setting the 100% of traffic back to the old function version.
+Switching to a new version can be done at different paces to ensure the new software is behaving fine. Doing a rollback to the previous version can be done setting the 100% of traffic back to the old function version.
 
 # Other Considerations
- * I used this arquitecture because I think the serverless approach of AWS fits very well for system requirements. Other ways with a more cloud agnostic components could be defined for this system, such as deploy the containerized image into any kubernetes cluster. The metrics described and the deployment strategy could be the same with this other approach.
+ * I used this architecture because I think the serverless approach of AWS fits very well for system requirements. Other ways with a more cloud agnostic components could be defined for this system, such as to deploy the containerized image into any kubernetes cluster. The metrics described and the deployment strategy could be the same with this other approach.
