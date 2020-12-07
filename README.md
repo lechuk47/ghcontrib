@@ -50,7 +50,7 @@ Lambda supports blue/green and canary deployments. To deploy a new version, a go
 
 ![Rollout](docs/Rollout.jpg)
 
+Switching to new version can be done at different paces to ensure the new software is behaving fine. Doing a rollback to the previous version can be done setting the 100% of traffic back to the old function version.
 
 # Other Considerations
- * I used this arquitecture becase I think the serverless approach of AWS fits very well for system requirements. Other ways with a more cloud agnostic components could be defined for this system, such as deploy the containerized image into any kubernetes cluster. The metrics described and the deployment strategy could be the same with this other approach.
-
+ * I used this arquitecture because I think the serverless approach of AWS fits very well for system requirements. Other ways with a more cloud agnostic components could be defined for this system, such as deploy the containerized image into any kubernetes cluster. The metrics described and the deployment strategy could be the same with this other approach.
