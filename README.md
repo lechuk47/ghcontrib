@@ -13,9 +13,6 @@ To build the container image and run the application, just run `docker-compose u
 curl http://localhost:10000/top/Barcelona?items=5
 ```
 
-# Software desing considerations
-The software use
-
 # Production Deployment
 A ServerLess approach fits the project requirements and have a lot of flexibility on the system management, deployment and costs. The following diagram shows a possible arquitecture based on AWS Api Gateway, AWS Lambda and Redis. As the Github API has strong rate limits, the system is designed to do the minimum requests to it
 
