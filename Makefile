@@ -8,7 +8,6 @@ VERSION = 0.0.1
 docker-build:
 	$(DOCKER) build -t $(IMAGE):$(VERSION) -f docker/Dockerfile .
 
-
 .PHONY: up
 up:
 	$(DOCKER_COMPOSE) up --build -d
