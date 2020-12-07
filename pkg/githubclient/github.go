@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -23,9 +22,7 @@ type Client struct {
 
 //NewClient returns a github client
 func NewClient(ctx context.Context, token string) *Client {
-
 	var clientRest *github.Client
-
 	if token != "" {
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: token},
@@ -44,7 +41,7 @@ func NewClient(ctx context.Context, token string) *Client {
 }
 
 //Checks if a Github API RateLimit is Active
-func (gh *Client) checkRateLimit() bool {
+func (gh *Client) CheckRateLimit() bool {
 	if gh.rateLimitError != nil {
 		now := time.Now()
 		waitSecs := gh.rateLimitError.Rate.Reset.Sub(now).Seconds()
@@ -65,11 +62,16 @@ func (gh *Client) setRateLimit(err *github.RateLimitError) {
 	gh.rateLimitMutex.Unlock()
 }
 
+//GetRateLimitError Returns the Rate limit error
+func (gh Client) GetRateLimitError() error {
+	return gh.rateLimitError
+}
+
 //GetUsersByLocation performs a Search API request to find all users by the paramter location
 //Then runs the getUserDispatcher function to get all user details concurrently
 func (gh *Client) GetUsersByLocation(ctx context.Context, location string, items int) ([]*github.User, error) {
 	// Control Rate Limit
-	if ok := gh.checkRateLimit(); ok {
+	if ok := gh.CheckRateLimit(); ok {
 		logrus.Debug("RateLimitError Set, Discarting API Requests until RateLimit expiration")
 		logrus.Error(gh.rateLimitError)
 		return nil, gh.rateLimitError
@@ -77,13 +79,13 @@ func (gh *Client) GetUsersByLocation(ctx context.Context, location string, items
 		gh.setRateLimit(nil)
 	}
 
-	var users []*github.User
-
+	var users = make([]*github.User, 0)
 	opts := &github.SearchOptions{ListOptions: github.ListOptions{Page: 1, PerPage: items}, Sort: "repos"}
 	q := fmt.Sprintf("location:%s type:user", location)
 
 	logrus.Debug("Invoking Github Search API")
 	result, resp, err := gh.clientRest.Search.Users(gh.ctx, q, opts)
+
 	if _, ok := err.(*github.RateLimitError); ok {
 		logrus.Error(err)
 		gh.setRateLimit(err.(*github.RateLimitError))
@@ -113,12 +115,6 @@ func (gh *Client) GetUsersByLocation(ctx context.Context, location string, items
 			return nil, err
 		}
 	}
-	if len(users) > 0 {
-		sort.SliceStable(users, func(i, j int) bool {
-			return *(users)[i].PublicRepos > *(users)[j].PublicRepos
-		})
-	}
-
 	return users, nil
 }
 

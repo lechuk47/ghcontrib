@@ -5,7 +5,12 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     image: ghcontrib:0.0.1
+    depends_on:
+      - redis
     ports:
       - "10000:10000"
-    command: ./ghcontrib --verbose
-    #command: ./ghcontrib --verbose --github_token=${GITHUB_TOKEN}
+    command: ./ghcontrib --cache_addr=redis:6379 --verbose
+    #command: ./ghcontrib --verbose --cache_addr=redis:6379 --github_token=${GITHUB_TOKEN}
+
+  redis:
+    image: redis

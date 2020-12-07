@@ -11,7 +11,7 @@ docker-build:
 
 PHONY+=run
 make up:
-	$(DOCKER_COMPOSE) up -d
+	$(DOCKER_COMPOSE) up --build -d
 
 PHONY+=shutdown
 down:
